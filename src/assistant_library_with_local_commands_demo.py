@@ -24,6 +24,8 @@ The Google Assistant Library can be installed with:
 It is available for Raspberry Pi 2/3 only; Pi Zero is not supported.
 """
 
+LOG_FILENAME = '/var/log/voice.log'
+
 import logging
 import subprocess
 import sys
@@ -35,6 +37,7 @@ from google.assistant.library import Assistant
 from google.assistant.library.event import EventType
 
 logging.basicConfig(
+    filename='/var/log/voice.log',
     level=logging.INFO,
     format="[%(asctime)s] %(levelname)s:%(name)s:%(message)s"
 )
@@ -54,19 +57,28 @@ def say_ip():
     ip_address = subprocess.check_output("hostname -I | cut -d' ' -f1", shell=True)
     aiy.audio.say('My IP address is %s' % ip_address.decode('utf-8'))
 
+def power_on_kodi():
+    aiy.audio.say('starting kodi')
+    subprocess.call('sudo etherwake 54:04:a6:d1:0e:8e', shell=True)
+
+def power_off_kodi():
+    aiy.audio.say('powering off kodi')
+    
 
 def process_event(assistant, event):
     status_ui = aiy.voicehat.get_status_ui()
     if event.type == EventType.ON_START_FINISHED:
         status_ui.status('ready')
+        aiy.audio.say('I am here to serve you my master!')
         if sys.stdout.isatty():
             print('Say "OK, Google" then speak, or press Ctrl+C to quit...')
 
-    elif event.type == EventType.ON_CONVERSATION_TURN_STARTED:
+    elif event.type == EventType.ON_CONVERSATION_TURN_STARTED or event.type == EventType.ON_MUTED_CHANGED:
         status_ui.status('listening')
 
     elif event.type == EventType.ON_RECOGNIZING_SPEECH_FINISHED and event.args:
         print('You said:', event.args['text'])
+        logging.info('You said: %s' % event.args['text'])
         text = event.args['text'].lower()
         if text == 'power off':
             assistant.stop_conversation()
@@ -77,6 +89,9 @@ def process_event(assistant, event):
         elif text == 'ip address':
             assistant.stop_conversation()
             say_ip()
+        elif text == 'power on kodi' or text == "start kodi":
+            assistant.stop_conversation()
+            power_on_kodi()
 
     elif event.type == EventType.ON_END_OF_UTTERANCE:
         status_ui.status('thinking')
@@ -84,8 +99,16 @@ def process_event(assistant, event):
     elif event.type == EventType.ON_CONVERSATION_TURN_FINISHED:
         status_ui.status('ready')
 
+    elif event.type == EventType.ON_ALERT_STARTED:
+        aiy.audio.say('alert started!');
+
+    elif event.type == EventType.ON_ALERT_FINISHED:
+        aiy.audio.say('alert finished!');        
+
     elif event.type == EventType.ON_ASSISTANT_ERROR and event.args and event.args['is_fatal']:
         sys.exit(1)
+    else:
+        logging.info('Unkown event type: ' + str(event.type));
 
 
 def main():
@@ -96,4 +119,7 @@ def main():
 
 
 if __name__ == '__main__':
-    main()
+    try:
+        main()
+    except Exception as ex:
+        logging.exception(ex)
