@@ -29,6 +29,7 @@ LOG_FILENAME = '/var/log/voice.log'
 import logging
 import subprocess
 import sys
+import threading
 #import asyncio
 import urllib.error
 import aiy.assistant.auth_helpers
@@ -45,6 +46,9 @@ logging.basicConfig(
 )
 
 kodi = None
+assistant = None
+task = threading.Thread(target=run_task)
+alarm_is_buzzing = False
 
 def set_kodi_volume(volume):
     try:
@@ -75,6 +79,7 @@ def process_event(assistant, event):
     if event.type == EventType.ON_START_FINISHED:
         set_kodi_volume(60)
         status_ui.status('ready')
+        aiy.voicehat.get_button().on_press(on_button_pressed)
         aiy.audio.say('I am here to serve you my master!')
         if sys.stdout.isatty():
             print('Say "OK, Google" then speak, or press Ctrl+C to quit...')
@@ -115,25 +120,40 @@ def process_event(assistant, event):
         set_kodi_volume(60)
     elif event.type == EventType.ON_RESPONDING_FINISHED:
         set_kodi_volume(100)
+    elif event.type == EventType.ON_ALERT_STARTED:
+        set_kodi_volume(60)
+        alarm_is_buzzing = True
+    elif event.type == EventType.ON_ALERT_FINISHED:
+        set_kodi_volume(100)
+        alarm_is_buzzing = False
     elif event.type == EventType.ON_CONVERSATION_TURN_TIMEOUT:
         set_kodi_volume(100)
     else:
         logging.info('Unkown event type: ' + str(event.type));
 
 
-def main():
+def run_task():
     credentials = aiy.assistant.auth_helpers.get_assistant_credentials()
-    with Assistant(credentials, 'my-home-speech-script-AIY-Model') as assistant:
-        for event in assistant.start():
+    with Assistant(credentials, 'my-home-speech-script-AIY-Model') as assist:
+        assistant = assist
+        for event in assist.start():
             try:
-                process_event(assistant, event)
+                process_event(assist, event)
             except Exception as e:
                 logging.exception("processing event failed")            
 
+def on_button_pressed():
+    if alarm_is_buzzing:
+        logging.info("Stoppping the buzz")
+        assistant.send_text_query("stop")
+        alarm_is_buzzing = False
+        return
 
+    logging.info("regular button press, i am listening!")
+    assistant.start_conversation()
 
 if __name__ == '__main__':
     try:
-        main()
+        task.start()
     except Exception as e:
         logging.exception("main failed")
