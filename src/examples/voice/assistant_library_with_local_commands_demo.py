@@ -24,21 +24,36 @@ The Google Assistant Library can be installed with:
 It is available for Raspberry Pi 2/3 only; Pi Zero is not supported.
 """
 
+LOG_FILENAME = '/var/log/voice.log'
+
 import logging
 import subprocess
 import sys
-
+#import asyncio
+import urllib.error
 import aiy.assistant.auth_helpers
 import aiy.audio
 import aiy.voicehat
 from google.assistant.library import Assistant
 from google.assistant.library.event import EventType
+from kodipydent import Kodi
 
 logging.basicConfig(
+    filename='/var/log/voice.log',
     level=logging.INFO,
     format="[%(asctime)s] %(levelname)s:%(name)s:%(message)s"
 )
 
+kodi = None
+
+def set_kodi_volume(volume):
+    try:
+        global kodi
+        if kodi is None:
+            kodi = Kodi('openelec', username='keydon', password='desperad0')
+        kodi.Application.SetVolume(volume)
+    except urllib.error.URLError:
+        logging.error('kodi not reachable')
 
 def power_off_pi():
     aiy.audio.say('Good bye!')
@@ -54,19 +69,23 @@ def say_ip():
     ip_address = subprocess.check_output("hostname -I | cut -d' ' -f1", shell=True)
     aiy.audio.say('My IP address is %s' % ip_address.decode('utf-8'))
 
-
 def process_event(assistant, event):
+    logging.info('processing event type: ' + str(event.type));
     status_ui = aiy.voicehat.get_status_ui()
     if event.type == EventType.ON_START_FINISHED:
+        set_kodi_volume(60)
         status_ui.status('ready')
+        aiy.audio.say('I am here to serve you my master!')
         if sys.stdout.isatty():
             print('Say "OK, Google" then speak, or press Ctrl+C to quit...')
+        set_kodi_volume(100)
 
     elif event.type == EventType.ON_CONVERSATION_TURN_STARTED:
         status_ui.status('listening')
+        set_kodi_volume(60)
 
     elif event.type == EventType.ON_RECOGNIZING_SPEECH_FINISHED and event.args:
-        print('You said:', event.args['text'])
+        logging.info('You said: %s', event.args['text'])
         text = event.args['text'].lower()
         if text == 'power off':
             assistant.stop_conversation()
@@ -77,23 +96,44 @@ def process_event(assistant, event):
         elif text == 'ip address':
             assistant.stop_conversation()
             say_ip()
+        else:
+            pass
 
     elif event.type == EventType.ON_END_OF_UTTERANCE:
         status_ui.status('thinking')
 
     elif event.type == EventType.ON_CONVERSATION_TURN_FINISHED:
         status_ui.status('ready')
+        set_kodi_volume(100)
 
     elif event.type == EventType.ON_ASSISTANT_ERROR and event.args and event.args['is_fatal']:
         sys.exit(1)
+    elif event.type == EventType.ON_ASSISTANT_ERROR:
+        status_ui.status('ready')
+        set_kodi_volume(100)
+    elif event.type == EventType.ON_RESPONDING_STARTED:
+        set_kodi_volume(60)
+    elif event.type == EventType.ON_RESPONDING_FINISHED:
+        set_kodi_volume(100)
+    elif event.type == EventType.ON_CONVERSATION_TURN_TIMEOUT:
+        set_kodi_volume(100)
+    else:
+        logging.info('Unkown event type: ' + str(event.type));
 
 
 def main():
     credentials = aiy.assistant.auth_helpers.get_assistant_credentials()
-    with Assistant(credentials) as assistant:
+    with Assistant(credentials, 'my-home-speech-script-AIY-Model') as assistant:
         for event in assistant.start():
-            process_event(assistant, event)
+            try:
+                process_event(assistant, event)
+            except Exception as e:
+                logging.exception("processing event failed")            
+
 
 
 if __name__ == '__main__':
-    main()
+    try:
+        main()
+    except Exception as e:
+        logging.exception("main failed")

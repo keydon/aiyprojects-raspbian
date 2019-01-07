@@ -28,7 +28,7 @@ AUDIO_SAMPLE_RATE_HZ = 16000
 _voicehat_recorder = None
 _voicehat_player = None
 _status_ui = None
-_tts_volume = 60
+_tts_volume = 50
 _tts_pitch = 130
 
 
