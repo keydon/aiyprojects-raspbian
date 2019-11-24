@@ -47,7 +47,8 @@ logging.basicConfig(
 
 kodi = None
 assistant = None
-task = threading.Thread(target=run_task)
+#task = threading.Thread(target=run_task)
+global alarm_is_buzzing
 alarm_is_buzzing = False
 
 def set_kodi_volume(volume):
@@ -122,9 +123,11 @@ def process_event(assistant, event):
         set_kodi_volume(100)
     elif event.type == EventType.ON_ALERT_STARTED:
         set_kodi_volume(60)
+        #global alarm_is_buzzing
         alarm_is_buzzing = True
     elif event.type == EventType.ON_ALERT_FINISHED:
         set_kodi_volume(100)
+        #global alarm_is_buzzing
         alarm_is_buzzing = False
     elif event.type == EventType.ON_CONVERSATION_TURN_TIMEOUT:
         set_kodi_volume(100)
@@ -133,6 +136,7 @@ def process_event(assistant, event):
 
 
 def run_task():
+    global assistant
     credentials = aiy.assistant.auth_helpers.get_assistant_credentials()
     with Assistant(credentials, 'my-home-speech-script-AIY-Model') as assist:
         assistant = assist
@@ -143,6 +147,9 @@ def run_task():
                 logging.exception("processing event failed")            
 
 def on_button_pressed():
+    logging.info("buttooon is pressed!")
+    global alarm_is_buzzing
+    global assistant
     if alarm_is_buzzing:
         logging.info("Stoppping the buzz")
         assistant.send_text_query("stop")
@@ -151,9 +158,11 @@ def on_button_pressed():
 
     logging.info("regular button press, i am listening!")
     assistant.start_conversation()
+    logging.info("conversation started")
 
 if __name__ == '__main__':
     try:
+        task = threading.Thread(target=run_task)
         task.start()
     except Exception as e:
         logging.exception("main failed")

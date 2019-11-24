@@ -61,7 +61,7 @@ class MyAssistant(object):
 
     def _run_task(self):
         credentials = aiy.assistant.auth_helpers.get_assistant_credentials()
-        with Assistant(credentials) as assistant:
+        with Assistant(credentials, 'my-home-speech-script-AIY-Model') as assistant:
             self._assistant = assistant
             for event in assistant.start():
                 self._process_event(event)
