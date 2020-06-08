@@ -104,7 +104,8 @@ def process_event(assistant, event):
             say_ip()
         else:
             pass
-
+    elif event.type == EventType.ON_RENDER_RESPONSE and event.args:
+        logging.info('She said: %s', event.args['text'])
     elif event.type == EventType.ON_END_OF_UTTERANCE:
         status_ui.status('thinking')
 
