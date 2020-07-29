@@ -126,7 +126,7 @@ def process_event(assistant, event):
         elif text == 'ip address':
             assistant.stop_conversation()
             say_ip()
-        elif text == 'soft reboot':
+        elif text == 'soft reboot' or text == 'soft restart':
             assistant.stop_conversation()
             soft_reboot()
         elif text == 'wake up' or text == 'kodi wake up':
