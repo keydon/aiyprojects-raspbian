@@ -30,6 +30,8 @@ import logging
 import subprocess
 import sys
 import threading
+import socket
+
 #import asyncio
 import urllib.error
 import aiy.assistant.auth_helpers
@@ -69,6 +71,18 @@ def reboot_pi():
     aiy.audio.say('See you in a bit!')
     subprocess.call('sudo reboot', shell=True)
 
+def wakeup_kodi():
+    aiy.audio.say('waking up')
+    openelec_mac = "54:04:a6:d1:0e:8e"
+    target = openelec_mac.replace(":", "")
+    magic = bytes.fromhex("F" * 12 + macaddress * 16)
+
+    with socket.socket(socket.AF_INET, socket.SOCK_DGRAM) as sock:
+      sock.setsockopt(socket.SOL_SOCKET, socket.SO_BROADCAST, 1)
+      sock.connect(("255.255.255.255", 9))
+      sock.send(magic)
+
+    print("sent magic")
 
 def say_ip():
     ip_address = subprocess.check_output("hostname -I | cut -d' ' -f1", shell=True)
@@ -102,6 +116,9 @@ def process_event(assistant, event):
         elif text == 'ip address':
             assistant.stop_conversation()
             say_ip()
+        elif test == 'wake up' or test == 'kodi wake up':
+            assistant.stop_conversation()
+            wakeup_kodi()
         else:
             pass
     elif event.type == EventType.ON_RENDER_RESPONSE and event.args:
