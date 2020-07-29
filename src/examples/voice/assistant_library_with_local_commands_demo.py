@@ -125,7 +125,7 @@ def process_event(assistant, event):
         elif text == 'soft reboot':
             assistant.stop_conversation()
             soft_reboot()
-        elif test == 'wake up' or test == 'kodi wake up':
+        elif text == 'wake up' or text == 'kodi wake up':
             assistant.stop_conversation()
             wakeup_kodi()
         else:
