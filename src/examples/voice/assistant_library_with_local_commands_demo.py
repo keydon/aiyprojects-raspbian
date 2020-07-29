@@ -75,6 +75,10 @@ def soft_reboot():
     aiy.audio.say('See you in a soft bit!')
     sys.exit(1)
 
+def kill_kodi():
+    aiy.audio.say('Restarting kodi')
+    subprocess.call('ssh -l root openelec killall -9 kodi.bin', shell=True)
+
 def wakeup_kodi():
     aiy.audio.say('waking up')
     openelec_mac = "54:04:a6:d1:0e:8e"
@@ -128,6 +132,10 @@ def process_event(assistant, event):
         elif text == 'wake up' or text == 'kodi wake up':
             assistant.stop_conversation()
             wakeup_kodi()
+        elif (text == 'kill kodi' or text == 'restart kodi'
+                text == 'kodi restart'):
+            assistant.stop_conversation()
+            kill_kodi()
         else:
             pass
     elif event.type == EventType.ON_RENDER_RESPONSE and event.args:
