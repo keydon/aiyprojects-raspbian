@@ -79,7 +79,7 @@ def wakeup_kodi():
     aiy.audio.say('waking up')
     openelec_mac = "54:04:a6:d1:0e:8e"
     target = openelec_mac.replace(":", "")
-    magic = bytes.fromhex("F" * 12 + macaddress * 16)
+    magic = bytes.fromhex("F" * 12 + target * 16)
 
     with socket.socket(socket.AF_INET, socket.SOCK_DGRAM) as sock:
       sock.setsockopt(socket.SOL_SOCKET, socket.SO_BROADCAST, 1)
