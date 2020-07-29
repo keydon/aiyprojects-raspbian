@@ -153,10 +153,8 @@ def process_event(assistant, event):
         set_kodi_volume(100)
     elif event.type == EventType.ON_RESPONDING_STARTED:
         set_kodi_volume(60)
-        isResponding = True
     elif event.type == EventType.ON_RESPONDING_FINISHED:
         set_kodi_volume(100)
-        isResponding = False
     elif event.type == EventType.ON_ALERT_STARTED:
         set_kodi_volume(60)
         global alarm_is_buzzing
@@ -190,11 +188,9 @@ def on_button_pressed():
         assistant.send_text_query("stop")
         alarm_is_buzzing = False
         return
-    elif isResponding:
-      assistant.stop_conversation()
-      isResponding = False
 
     logging.info("regular button press, i am listening!")
+    assistant.stop_conversation()
     assistant.start_conversation()
     logging.info("conversation started")
 
