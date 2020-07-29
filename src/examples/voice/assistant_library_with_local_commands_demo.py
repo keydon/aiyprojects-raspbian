@@ -49,8 +49,6 @@ logging.basicConfig(
 
 kodi = None
 assistant = None
-#task = threading.Thread(target=run_task)
-global alarm_is_buzzing
 alarm_is_buzzing = False
 ttl = 3
 isResponding = False
@@ -112,6 +110,7 @@ def process_event(assistant, event):
 
     elif event.type == EventType.ON_RECOGNIZING_SPEECH_FINISHED and event.args:
         logging.info('You said: %s', event.args['text'])
+        global ttl
         ttl = 3
         text = event.args['text'].lower()
         if text == 'power off':
@@ -137,6 +136,7 @@ def process_event(assistant, event):
         status_ui.status('thinking')
 
     elif event.type == EventType.ON_CONVERSATION_TURN_FINISHED:
+        global ttl
         ttl = 3
         status_ui.status('ready')
         set_kodi_volume(100)
@@ -145,6 +145,7 @@ def process_event(assistant, event):
         sys.exit(1)
     elif event.type == EventType.ON_ASSISTANT_ERROR:
         status_ui.status('ready')
+        global ttl
         ttl -= -1
         logging.warn('TTL: %s', ttl)
         if ttl == 0:
@@ -158,11 +159,11 @@ def process_event(assistant, event):
         isResponding = False
     elif event.type == EventType.ON_ALERT_STARTED:
         set_kodi_volume(60)
-        #global alarm_is_buzzing
+        global alarm_is_buzzing
         alarm_is_buzzing = True
     elif event.type == EventType.ON_ALERT_FINISHED:
         set_kodi_volume(100)
-        #global alarm_is_buzzing
+        global alarm_is_buzzing
         alarm_is_buzzing = False
     elif event.type == EventType.ON_CONVERSATION_TURN_TIMEOUT:
         set_kodi_volume(100)
@@ -184,7 +185,6 @@ def run_task():
 def on_button_pressed():
     logging.info("buttooon is pressed!")
     global alarm_is_buzzing
-    global assistant
     if alarm_is_buzzing:
         logging.info("Stoppping the buzz")
         assistant.send_text_query("stop")
