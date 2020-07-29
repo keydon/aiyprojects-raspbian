@@ -52,6 +52,7 @@ assistant = None
 #task = threading.Thread(target=run_task)
 global alarm_is_buzzing
 alarm_is_buzzing = False
+ttl = 3
 
 def set_kodi_volume(volume):
     try:
@@ -70,6 +71,10 @@ def power_off_pi():
 def reboot_pi():
     aiy.audio.say('See you in a bit!')
     subprocess.call('sudo reboot', shell=True)
+
+def soft_reboot():
+    aiy.audio.say('See you in a soft bit!')
+    sys.exit(1)
 
 def wakeup_kodi():
     aiy.audio.say('waking up')
@@ -106,6 +111,7 @@ def process_event(assistant, event):
 
     elif event.type == EventType.ON_RECOGNIZING_SPEECH_FINISHED and event.args:
         logging.info('You said: %s', event.args['text'])
+        ttl = 3
         text = event.args['text'].lower()
         if text == 'power off':
             assistant.stop_conversation()
@@ -116,6 +122,9 @@ def process_event(assistant, event):
         elif text == 'ip address':
             assistant.stop_conversation()
             say_ip()
+        elif text == 'soft reboot':
+            assistant.stop_conversation()
+            soft_reboot()
         elif test == 'wake up' or test == 'kodi wake up':
             assistant.stop_conversation()
             wakeup_kodi()
@@ -127,6 +136,7 @@ def process_event(assistant, event):
         status_ui.status('thinking')
 
     elif event.type == EventType.ON_CONVERSATION_TURN_FINISHED:
+        ttl = 3
         status_ui.status('ready')
         set_kodi_volume(100)
 
@@ -134,6 +144,10 @@ def process_event(assistant, event):
         sys.exit(1)
     elif event.type == EventType.ON_ASSISTANT_ERROR:
         status_ui.status('ready')
+        ttl -= -1
+        logging.warn('TTL: %s', ttl)
+        if ttl == 0:
+        	sys.exit(1)
         set_kodi_volume(100)
     elif event.type == EventType.ON_RESPONDING_STARTED:
         set_kodi_volume(60)
