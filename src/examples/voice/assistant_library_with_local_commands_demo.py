@@ -133,7 +133,7 @@ def process_event(assistant, event):
             assistant.stop_conversation()
             wakeup_kodi()
         elif (text == 'kill kodi' or text == 'restart kodi'
-                text == 'kodi restart'):
+                or text == 'kodi restart'):
             assistant.stop_conversation()
             kill_kodi()
         else:
