@@ -154,7 +154,7 @@ def process_event(assistant, event):
     elif event.type == EventType.ON_ASSISTANT_ERROR:
         status_ui.status('ready')
         global ttl
-        ttl -= -1
+        ttl -= 1
         logging.warn('TTL: %s', ttl)
         if ttl == 0:
         	sys.exit(1)
