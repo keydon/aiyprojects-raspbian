@@ -50,12 +50,13 @@ logging.basicConfig(
 kodi = None
 assistant = None
 alarm_is_buzzing = False
-ttl = 3
+ttl_max = 1
+ttl = ttl_max
 isResponding = False
 
 def set_kodi_volume(volume):
+    global kodi
     try:
-        global kodi
         if kodi is None:
             kodi = Kodi('openelec', username='keydon', password='desperad0')
         kodi.Application.SetVolume(volume)
@@ -79,6 +80,10 @@ def kill_kodi():
     aiy.audio.say('Restarting kodi')
     subprocess.call('ssh -l root openelec killall -9 kodi.bin', shell=True)
 
+def kill_kodi():
+    aiy.audio.say('updating')
+    subprocess.call('git pull ', shell=True)
+
 def wakeup_kodi():
     aiy.audio.say('waking up')
     openelec_mac = "54:04:a6:d1:0e:8e"
@@ -97,6 +102,8 @@ def say_ip():
     aiy.audio.say('My IP address is %s' % ip_address.decode('utf-8'))
 
 def process_event(assistant, event):
+    global ttl
+    global alarm_is_buzzing
     logging.info('processing event type: ' + str(event.type));
     status_ui = aiy.voicehat.get_status_ui()
     if event.type == EventType.ON_START_FINISHED:
@@ -114,8 +121,7 @@ def process_event(assistant, event):
 
     elif event.type == EventType.ON_RECOGNIZING_SPEECH_FINISHED and event.args:
         logging.info('You said: %s', event.args['text'])
-        global ttl
-        ttl = 3
+        ttl = ttl_max
         text = event.args['text'].lower()
         if text == 'power off':
             assistant.stop_conversation()
@@ -129,13 +135,16 @@ def process_event(assistant, event):
         elif text == 'soft reboot' or text == 'soft restart':
             assistant.stop_conversation()
             soft_reboot()
-        elif text == 'wake up' or text == 'kodi wake up':
+        elif text == 'wake up' or text == 'kodi wake up' or text == 'kill yourself':
             assistant.stop_conversation()
             wakeup_kodi()
         elif (text == 'kill kodi' or text == 'restart kodi'
                 or text == 'kodi restart'):
             assistant.stop_conversation()
             kill_kodi()
+        elif text == 'update yourself' or text == 'git pull':
+            assistant.stop_conversation()
+            git_pull()
         else:
             pass
     elif event.type == EventType.ON_RENDER_RESPONSE and event.args:
@@ -144,8 +153,7 @@ def process_event(assistant, event):
         status_ui.status('thinking')
 
     elif event.type == EventType.ON_CONVERSATION_TURN_FINISHED:
-        global ttl
-        ttl = 3
+        ttl = ttl_max
         status_ui.status('ready')
         set_kodi_volume(100)
 
@@ -153,7 +161,6 @@ def process_event(assistant, event):
         sys.exit(1)
     elif event.type == EventType.ON_ASSISTANT_ERROR:
         status_ui.status('ready')
-        global ttl
         ttl -= 1
         logging.warn('TTL: %s', ttl)
         if ttl == 0:
@@ -165,11 +172,9 @@ def process_event(assistant, event):
         set_kodi_volume(100)
     elif event.type == EventType.ON_ALERT_STARTED:
         set_kodi_volume(60)
-        global alarm_is_buzzing
         alarm_is_buzzing = True
     elif event.type == EventType.ON_ALERT_FINISHED:
         set_kodi_volume(100)
-        global alarm_is_buzzing
         alarm_is_buzzing = False
     elif event.type == EventType.ON_CONVERSATION_TURN_TIMEOUT:
         set_kodi_volume(100)
@@ -189,8 +194,8 @@ def run_task():
                 logging.exception("processing event failed")            
 
 def on_button_pressed():
-    logging.info("buttooon is pressed!")
     global alarm_is_buzzing
+    logging.info("buttooon is pressed!")
     if alarm_is_buzzing:
         logging.info("Stoppping the buzz")
         assistant.send_text_query("stop")
