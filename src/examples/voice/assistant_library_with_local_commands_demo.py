@@ -160,12 +160,17 @@ def process_event(assistant, event):
     elif event.type == EventType.ON_ASSISTANT_ERROR and event.args and event.args['is_fatal']:
         sys.exit(1)
     elif event.type == EventType.ON_ASSISTANT_ERROR:
-        status_ui.status('ready')
         ttl -= 1
-        logging.warn('TTL: %s', ttl)
+        logging.warn('TTL: %s, error_info: %s', ttl, event)
         if ttl == 0:
+          status_ui.status('thinking')
+          aiy.audio.say('restarting')
+          logging.error('restarting')
         	sys.exit(1)
-        set_kodi_volume(100)
+        else:
+          status_ui.status('ready')
+          set_kodi_volume(100)
+
     elif event.type == EventType.ON_RESPONDING_STARTED:
         set_kodi_volume(60)
     elif event.type == EventType.ON_RESPONDING_FINISHED:
