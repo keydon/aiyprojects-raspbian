@@ -114,11 +114,11 @@ def do_checks():
 how to setup the voiceHAT driver: https://git.io/v99yK"""))
         return
 
-    if not check_voicehat_is_first_card():
-        print(textwrap.fill(
-            """The voiceHAT not the first sound device, so the voice recognizer
-may be unable to find it. Please try removing other sound drivers."""))
-        return
+#    if not check_voicehat_is_first_card():
+#        print(textwrap.fill(
+#            ""The voiceHAT not the first sound device, so the voice recognizer
+#may be unable to find it. Please try removing other sound drivers."""))
+#        return
 
     if not check_speaker_works():
         print(textwrap.fill(
@@ -148,8 +148,8 @@ def enable_audio_driver():
 
 
 def main():
-    if get_aiy_device_name() == 'Voice Hat':
-        enable_audio_driver()
+    #if get_aiy_device_name() == 'Voice Hat':
+    #    enable_audio_driver()
     do_checks()
 
 

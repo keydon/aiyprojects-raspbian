@@ -6,14 +6,14 @@ Description=voice recognizer
 After=network.target ntpdate.service
 
 [Service]
-Environment=VIRTUAL_ENV=/home/pi/AIY-projects-python/env
-Environment=PATH=/home/pi/AIY-projects-python/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
-ExecStart=/home/pi/AIY-projects-python/env/bin/python3 -u src/main.py
-WorkingDirectory=/home/pi/AIY-projects-python
+Environment=VIRTUAL_ENV=/home/keydon/AIY-voice-kit-python/env
+Environment=PATH=/home/keydon/AIY-voice-kit-python/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
+ExecStart=/home/keydon/AIY-voice-kit-python/env/bin/python pico.py --access_key 'AP++no5NAJImnSUF0plWa2yl9Tfg5A/gWIUtI6o7hGubSP5X9ftmYw==' --keyword_paths ./Computer_de_raspberry-pi_v3_0_0.ppn ./hey-kodi_de_raspberry-pi_v3_0_0.ppn  --model_path ./porcupine_params_de.pv
+WorkingDirectory=/home/keydon/AIY-voice-kit-python
 StandardOutput=inherit
 StandardError=inherit
 Restart=always
-User=pi
+User=keydon
 
 [Install]
 WantedBy=multi-user.target

@@ -313,7 +313,8 @@ class CloudSpeechRequest(GenericSpeechRequest):
             sample_rate_hertz=AUDIO_SAMPLE_RATE_HZ,
             # For a list of supported languages see:
             # https://cloud.google.com/speech/docs/languages.
-            language_code=self.language_code,  # a BCP-47 language tag
+            language_code='de-DE',  # a BCP-47 language tag
+            alternativeLanguageCodes=['en-US'],
             speech_contexts=[self._get_speech_context()],
         )
         streaming_config = types.StreamingRecognitionConfig(
