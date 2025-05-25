@@ -36,7 +36,10 @@ except ImportError:
     sys.exit(1)
 
 from google.rpc import code_pb2 as error_code
-from google.assistant.embedded.v1alpha1 import embedded_assistant_pb2
+from google.assistant.embedded.v1alpha2 import (
+    embedded_assistant_pb2,
+    embedded_assistant_pb2_grpc,
+)
 import grpc
 from six.moves import queue
 
@@ -218,9 +221,9 @@ class GenericSpeechRequest(object):
 
     def _handle_response_stream(self, response_stream):
         for resp in response_stream:
-            if resp.error.code != error_code.OK:
-                self._end_audio_request()
-                raise Error('Server error: ' + resp.error.message)
+            ##if resp.error.code != error_code.OK:
+            #    self._end_audio_request()
+            #    raise Error('Server error: ' + resp.error.message)
 
             if self._stop_sending_audio(resp):
                 self._end_audio_request()
@@ -341,9 +344,13 @@ class CloudSpeechRequest(GenericSpeechRequest):
             speech_event_type = StreamingRecognizeResponse.SpeechEventType.Name(
                 resp.speech_event_type)
             logger.info('endpointer_type: %s', speech_event_type)
+        if resp.event_type:
+            speech_event_type = StreamingRecognizeResponse.SpeechEventType.Name(
+                resp.event_type)
+            logger.info('endpointer_type: %s', speech_event_type)
 
         END_OF_SINGLE_UTTERANCE = StreamingRecognizeResponse.SpeechEventType.Value('END_OF_SINGLE_UTTERANCE')
-        return resp.speech_event_type == END_OF_SINGLE_UTTERANCE
+        return speech_event_type == END_OF_SINGLE_UTTERANCE
 
     def _handle_response(self, resp):
         """Store the last transcript we received."""
@@ -368,14 +375,19 @@ class AssistantSpeechRequest(GenericSpeechRequest):
         self._conversation_state = None
         self._response_audio = b''
         self._transcript = None
+        self._is_new_conversation = True
+        self._device_id = "my-home-speech-script-AIY-Model"
+        self._device_model_id = "my-home-speech-script-AIY-Model"
+        self._language_code = "de-DE"
 
     def reset(self):
         super().reset()
         self._response_audio = b''
         self._transcript = None
+        self._is_new_conversation = True
 
     def _make_service(self, channel):
-        return embedded_assistant_pb2.EmbeddedAssistantStub(channel)
+        return embedded_assistant_pb2_grpc.EmbeddedAssistantStub(channel)
 
     def _create_config_request(self):
         audio_in_config = embedded_assistant_pb2.AudioInConfig(
@@ -387,48 +399,66 @@ class AssistantSpeechRequest(GenericSpeechRequest):
             sample_rate_hertz=AUDIO_SAMPLE_RATE_HZ,
             volume_percentage=50,
         )
-        converse_state = embedded_assistant_pb2.ConverseState(
+        #converse_state = embedded_assistant_pb2.ConverseState(
+        #    conversation_state=self._conversation_state,
+        #)
+
+        dialog_state_in=embedded_assistant_pb2.DialogStateIn(
+            language_code=self._language_code,
             conversation_state=self._conversation_state,
+            is_new_conversation=self._is_new_conversation,
         )
-        converse_config = embedded_assistant_pb2.ConverseConfig(
+        device_config=embedded_assistant_pb2.DeviceConfig(
+            device_id=self._device_id,
+            device_model_id=self._device_model_id,
+        )
+        config = embedded_assistant_pb2.AssistConfig(
             audio_in_config=audio_in_config,
             audio_out_config=audio_out_config,
-            converse_state=converse_state,
+            dialog_state_in=dialog_state_in,
+            device_config=device_config,
         )
 
-        return embedded_assistant_pb2.ConverseRequest(config=converse_config)
+        return embedded_assistant_pb2.AssistRequest(config=config)
+
 
     def _create_audio_request(self, data):
-        return embedded_assistant_pb2.ConverseRequest(audio_in=data)
+        return embedded_assistant_pb2.AssistRequest(audio_in=data)
 
     def _create_response_stream(self, service, request_stream, deadline):
-        return service.Converse(request_stream, deadline)
+        return service.Assist(request_stream, deadline)
 
     def _stop_sending_audio(self, resp):
         if resp.event_type:
             logger.info('event_type: %s', resp.event_type)
 
         return (resp.event_type ==
-                embedded_assistant_pb2.ConverseResponse.END_OF_UTTERANCE)
+                embedded_assistant_pb2.AssistResponse.END_OF_UTTERANCE)
 
     def _handle_response(self, resp):
         """Accumulate audio and text from the remote end. It will be handled
         in _finish_request().
         """
 
-        if resp.result.spoken_request_text:
-            logger.info('transcript: %s', resp.result.spoken_request_text)
-            self._transcript = resp.result.spoken_request_text
+        #if resp.result.spoken_request_text:
+            #logger.info('transcript: %s', resp.result.spoken_request_text)
+            #self._transcript = resp.result.spoken_request_text
+        if resp.speech_results:
+            logging.info('Transcript of user request: "%s".',
+                         ' '.join(r.transcript
+                                  for r in resp.speech_results))
+            self._transcript = ' '.join(r.transcript
+                                  for r in resp.speech_results)
 
         self._response_audio += resp.audio_out.audio_data
 
-        if resp.result.conversation_state:
-            self._conversation_state = resp.result.conversation_state
+        if resp.dialog_state_out.conversation_state:
+            self._conversation_state = resp.dialog_state_out.conversation_state
 
-        if resp.result.microphone_mode:
+        if resp.dialog_state_out.microphone_mode:
             self.dialog_follow_on = (
-                resp.result.microphone_mode ==
-                embedded_assistant_pb2.ConverseResult.DIALOG_FOLLOW_ON)
+                resp.dialog_state_out.microphone_mode ==
+                embedded_assistant_pb2.DialogStateOut.DIALOG_FOLLOW_ON)
 
     def _finish_request(self):
         super()._finish_request()
