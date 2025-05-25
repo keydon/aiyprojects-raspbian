@@ -28,6 +28,7 @@ import aiy.audio
 import aiy.voicehat
 
 logging.basicConfig(
+    filename='/var/log/voice.log',
     level=logging.INFO,
     format="[%(asctime)s] %(levelname)s:%(name)s:%(message)s"
 )
