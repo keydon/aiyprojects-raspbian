@@ -28,8 +28,8 @@ import google.auth.transport.grpc
 import google.auth.transport.requests
 try:
     from google.cloud import speech
-    from google.cloud.speech import enums
-    from google.cloud.speech import types
+    #from google.cloud.speech import enums
+    #from google.cloud.speech import types
 except ImportError:
     print("Failed to import google.cloud.speech. Try:")
     print("    env/bin/pip install -r requirements.txt")
@@ -144,7 +144,7 @@ class GenericSpeechRequest(object):
         """Return a SpeechContext instance to bias recognition towards certain
         phrases.
         """
-        return types.SpeechContext(
+        return SpeechContext(
             phrases=self._phrases,
         )
 
@@ -308,8 +308,8 @@ class CloudSpeechRequest(GenericSpeechRequest):
         return speech.SpeechClient()
 
     def _create_config_request(self):
-        recognition_config = types.RecognitionConfig(
-            encoding=enums.RecognitionConfig.AudioEncoding.LINEAR16,
+        recognition_config = RecognitionConfig(
+            encoding=RecognitionConfig.AudioEncoding.LINEAR16,
             sample_rate_hertz=AUDIO_SAMPLE_RATE_HZ,
             # For a list of supported languages see:
             # https://cloud.google.com/speech/docs/languages.
@@ -317,7 +317,7 @@ class CloudSpeechRequest(GenericSpeechRequest):
             alternativeLanguageCodes=['en-US'],
             speech_contexts=[self._get_speech_context()],
         )
-        streaming_config = types.StreamingRecognitionConfig(
+        streaming_config = StreamingRecognitionConfig(
             config=recognition_config,
             single_utterance=True,
         )
@@ -328,7 +328,7 @@ class CloudSpeechRequest(GenericSpeechRequest):
         return streaming_config
 
     def _create_audio_request(self, data):
-        return types.StreamingRecognizeRequest(audio_content=data)
+        return StreamingRecognizeRequest(audio_content=data)
 
     def _create_response_stream(self, client, request_stream, deadline):
         config = next(request_stream)
@@ -338,11 +338,11 @@ class CloudSpeechRequest(GenericSpeechRequest):
         """Check the endpointer type to see if an utterance has ended."""
 
         if resp.speech_event_type:
-            speech_event_type = types.StreamingRecognizeResponse.SpeechEventType.Name(
+            speech_event_type = StreamingRecognizeResponse.SpeechEventType.Name(
                 resp.speech_event_type)
             logger.info('endpointer_type: %s', speech_event_type)
 
-        END_OF_SINGLE_UTTERANCE = types.StreamingRecognizeResponse.SpeechEventType.Value('END_OF_SINGLE_UTTERANCE')
+        END_OF_SINGLE_UTTERANCE = StreamingRecognizeResponse.SpeechEventType.Value('END_OF_SINGLE_UTTERANCE')
         return resp.speech_event_type == END_OF_SINGLE_UTTERANCE
 
     def _handle_response(self, resp):
