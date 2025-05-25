@@ -13,11 +13,13 @@ import argparse
 import os
 import struct
 import wave
+import re
 from datetime import datetime
 
 import pvporcupine
 from pvrecorder import PvRecorder
 
+import json
 import requests
 import logging
 
@@ -29,6 +31,12 @@ logging.basicConfig(
     level=logging.INFO,
     format="[%(asctime)s] %(levelname)s:%(name)s:%(message)s"
 )
+
+HA_WEBHOOK_TIMER = "http://localhost:8123/api/webhook/timer7306dfcab90143a3aaf082353dab7a2f1f3ff36dd6df4486bb42f45ea9b8fc05"
+HA_WEBHOOK_HEADERS = {
+    "Content-Type": "application/json"
+}
+
 
 logger = logging.getLogger(__name__)
 
@@ -60,10 +68,20 @@ def on_hey_google(hotword):
                   on_hey_kodi(text)
                   status_ui.status('ready')
                   return
-                if text == 'goodbye':
-                    status_ui.status('stopping')
-                    print('Bye!')
-                    #break
+                match = re.search(r"\btimer\b.*\b(\d+)\b", text, re.IGNORECASE)
+                if match:
+                    duration = "00:%02d:00" % (int(match.group(1)))
+                    request_body = {
+                      "duration": duration
+                    }
+                    logger.info('time requested: %s' % (duration))
+                    try:
+                      resp = requests.post(HA_WEBHOOK_TIMER, headers=HA_WEBHOOK_HEADERS, data=json.dumps(request_body))
+                      resp.raise_for_status()
+                    except requests.exceptions.RequestException as e:
+                      print(f"Error during request: {e}")
+                    status_ui.status('ready')
+                    return
                 print('You said "', text, '"')
             if audio:
                 aiy.audio.play_audio(audio)
