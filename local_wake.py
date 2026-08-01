@@ -74,11 +74,7 @@ def on_hey_google(hotword):
     logger.info('got assistant')
     status_ui.status('listening')
     print('Listening...')
-    # Only hold the aiy recorder during recognize; otherwise its arecord
-    # subprocess would run alongside ours in wait_for_wake and both would
-    # pull capture frames through the same audio graph.
-    with aiy.audio.get_recorder():
-        text, audio = assistant.recognize()
+    text, audio = assistant.recognize()
     if text:
         if hotword == 'hey-kodi':
             on_hey_kodi(text)
@@ -207,16 +203,17 @@ def main():
     print('Listening ... (press Ctrl+C to exit)')
 
     try:
-        status_ui.status('ready')
-        while True:
-            name, score = wait_for_wake(
-                oww, args.threshold, args.debug,
-                args.capture_device, args.dead_time)
-            hotword = hotword_from_model_name(name)
-            logger.info('[%s] Detected %s (score %.3f)' % (
-                str(datetime.now()), hotword, score))
-            on_hey_google(hotword)
-            oww.reset()
+        with aiy.audio.get_recorder():
+            status_ui.status('ready')
+            while True:
+                name, score = wait_for_wake(
+                    oww, args.threshold, args.debug,
+                    args.capture_device, args.dead_time)
+                hotword = hotword_from_model_name(name)
+                logger.info('[%s] Detected %s (score %.3f)' % (
+                    str(datetime.now()), hotword, score))
+                on_hey_google(hotword)
+                oww.reset()
     except KeyboardInterrupt:
         print('Stopping ...')
 
