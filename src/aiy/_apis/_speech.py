@@ -376,7 +376,7 @@ class AssistantSpeechRequest(GenericSpeechRequest):
         self._response_audio = b''
         self._transcript = None
         self._is_new_conversation = True
-        self._device_id = "my-home-speech-script-AIY-Model"
+        self._device_id = "2D2AEE70FACD5C9A08A098C860ECFD86"
         self._device_model_id = "my-home-speech-script-AIY-Model"
         self._language_code = "de-DE"
 
