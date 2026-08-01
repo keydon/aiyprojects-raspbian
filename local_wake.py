@@ -4,10 +4,13 @@
 # instead of Picovoice Porcupine.
 #
 # Install with:
-#     sudo apt install libportaudio2
-#     pip install openwakeword sounddevice
+#     pip install openwakeword
 #     # Download the pre-trained built-in models on first run:
 #     python -c "import openwakeword.utils; openwakeword.utils.download_models()"
+#
+# Audio capture is done by shelling out to `arecord` (already present on
+# Raspbian) rather than sounddevice, because PortAudio does not expose ALSA
+# plug-family PCMs and cannot resample the Voice HAT's fixed native rate.
 #
 
 import argparse
@@ -17,8 +20,9 @@ import os
 import re
 from datetime import datetime
 
+import subprocess
+
 import numpy as np
-import sounddevice as sd
 from openwakeword.model import Model
 
 import requests
@@ -95,25 +99,34 @@ def on_hey_google(hotword):
     status_ui.status('ready')
 
 
-def wait_for_wake(oww, threshold, debug):
-    # Opens a fresh input stream each call so stale audio buffered during the
-    # assistant round-trip is discarded, and closes it before the assistant
-    # reopens the mic through aiy.audio.
-    with sd.InputStream(
-            samplerate=SAMPLE_RATE,
-            channels=1,
-            dtype='int16',
-            blocksize=CHUNK_SAMPLES) as stream:
+def wait_for_wake(oww, threshold, debug, device):
+    # Capture via arecord so we use ALSA's plug layer (which handles the
+    # Voice HAT's fixed native rate → 16 kHz resample) instead of PortAudio,
+    # which cannot see plug-family PCMs. A fresh process each call also drops
+    # audio buffered during the preceding assistant round-trip.
+    proc = subprocess.Popen(
+        ['arecord', '-q', '-D', device, '-f', 'S16_LE',
+         '-r', str(SAMPLE_RATE), '-c', '1', '-t', 'raw'],
+        stdout=subprocess.PIPE)
+    try:
+        chunk_bytes = CHUNK_SAMPLES * 2  # int16 = 2 bytes/sample
         while True:
-            data, overflowed = stream.read(CHUNK_SAMPLES)
-            if overflowed:
-                logger.warning('audio overflow')
-            scores = oww.predict(data[:, 0])
+            raw = proc.stdout.read(chunk_bytes)
+            if len(raw) < chunk_bytes:
+                raise RuntimeError('arecord exited unexpectedly on device %r' % device)
+            chunk = np.frombuffer(raw, dtype=np.int16)
+            scores = oww.predict(chunk)
             if debug:
                 print(' '.join('%s=%.2f' % (k, v) for k, v in scores.items()))
             for name, score in scores.items():
                 if score >= threshold:
                     return name, score
+    finally:
+        proc.terminate()
+        try:
+            proc.wait(timeout=2)
+        except subprocess.TimeoutExpired:
+            proc.kill()
 
 
 def main():
@@ -147,6 +160,12 @@ def main():
         help='Optional VAD gate to suppress non-speech false triggers. '
              '0 disables (default). Typical enabled value: 0.5')
     parser.add_argument(
+        '--capture_device',
+        default='plughw:0,0',
+        help='ALSA capture PCM name passed to arecord -D. Use "micboost" to '
+             'route through the softvol layer defined in ~/.asoundrc. '
+             'Default: plughw:0,0')
+    parser.add_argument(
         '--debug',
         action='store_true',
         help='Print per-frame prediction scores to stdout.')
@@ -164,7 +183,8 @@ def main():
         with aiy.audio.get_recorder():
             status_ui.status('ready')
             while True:
-                name, score = wait_for_wake(oww, args.threshold, args.debug)
+                name, score = wait_for_wake(
+                    oww, args.threshold, args.debug, args.capture_device)
                 hotword = hotword_from_model_name(name)
                 logger.info('[%s] Detected %s (score %.3f)' % (
                     str(datetime.now()), hotword, score))
