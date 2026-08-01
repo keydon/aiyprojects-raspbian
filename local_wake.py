@@ -99,7 +99,7 @@ def on_hey_google(hotword):
     status_ui.status('ready')
 
 
-def wait_for_wake(oww, threshold, debug, device):
+def wait_for_wake(oww, threshold, debug, device, dead_time_s):
     # Capture via arecord so we use ALSA's plug layer (which handles the
     # Voice HAT's fixed native rate → 16 kHz resample) instead of PortAudio,
     # which cannot see plug-family PCMs. A fresh process each call also drops
@@ -110,8 +110,14 @@ def wait_for_wake(oww, threshold, debug, device):
     if device:
         cmd += ['-D', device]
     proc = subprocess.Popen(cmd, stdout=subprocess.PIPE, bufsize=0)
+    # Feed the model during the dead window so its buffers stay filled with
+    # real audio, but suppress detections — otherwise the speaker echo of the
+    # assistant's response (mic + speaker share the Voice HAT) or the tail of
+    # the wake utterance itself re-triggers immediately.
+    dead_frames = int(dead_time_s * SAMPLE_RATE / CHUNK_SAMPLES)
     try:
         chunk_bytes = CHUNK_SAMPLES * 2  # int16 = 2 bytes/sample
+        frames_seen = 0
         while True:
             raw = b''
             while len(raw) < chunk_bytes:
@@ -121,8 +127,12 @@ def wait_for_wake(oww, threshold, debug, device):
                 raw += more
             chunk = np.frombuffer(raw, dtype=np.int16)
             scores = oww.predict(chunk)
+            frames_seen += 1
             if debug:
-                print(' '.join('%s=%.2f' % (k, v) for k, v in scores.items()))
+                marker = ' (dead)' if frames_seen <= dead_frames else ''
+                print(' '.join('%s=%.2f' % (k, v) for k, v in scores.items()) + marker)
+            if frames_seen <= dead_frames:
+                continue
             for name, score in scores.items():
                 if score >= threshold:
                     return name, score
@@ -172,6 +182,13 @@ def main():
              'bare "arecord test.wav". Try "plughw:0,0" or "micboost" if '
              'the default routes to the wrong source.')
     parser.add_argument(
+        '--dead_time',
+        type=float,
+        default=1.5,
+        help='Seconds after starting a new capture during which detections '
+             'are suppressed. Suppresses speaker-echo re-triggers on shared '
+             'mic/speaker hardware like the Voice HAT. Default: 1.5')
+    parser.add_argument(
         '--debug',
         action='store_true',
         help='Print per-frame prediction scores to stdout.')
@@ -190,7 +207,8 @@ def main():
             status_ui.status('ready')
             while True:
                 name, score = wait_for_wake(
-                    oww, args.threshold, args.debug, args.capture_device)
+                    oww, args.threshold, args.debug,
+                    args.capture_device, args.dead_time)
                 hotword = hotword_from_model_name(name)
                 logger.info('[%s] Detected %s (score %.3f)' % (
                     str(datetime.now()), hotword, score))
