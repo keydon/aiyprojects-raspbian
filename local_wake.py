@@ -31,10 +31,14 @@ import aiy.assistant.grpc
 import aiy.audio
 import aiy.voicehat
 
+_log_format = "[%(asctime)s] %(levelname)s:%(name)s:%(message)s"
 logging.basicConfig(
-    filename='/var/log/voice.log',
     level=logging.INFO,
-    format="[%(asctime)s] %(levelname)s:%(name)s:%(message)s"
+    format=_log_format,
+    handlers=[
+        logging.FileHandler('/var/log/voice.log'),
+        logging.StreamHandler(),
+    ],
 )
 
 HA_WEBHOOK_TIMER = "http://localhost:8123/api/webhook/timer7306dfcab90143a3aaf082353dab7a2f1f3ff36dd6df4486bb42f45ea9b8fc05"
@@ -73,7 +77,7 @@ def on_hey_google(hotword):
     assistant = aiy.assistant.grpc.get_assistant()
     logger.info('got assistant')
     status_ui.status('listening')
-    print('Listening...')
+    logger.info('listening for user command')
     text, audio = assistant.recognize()
     if text:
         if hotword == 'hey-kodi':
@@ -89,17 +93,17 @@ def on_hey_google(hotword):
                 resp = requests.post(HA_WEBHOOK_TIMER, headers=HA_WEBHOOK_HEADERS, data=json.dumps(request_body))
                 resp.raise_for_status()
             except requests.exceptions.RequestException as e:
-                print(f"Error during request: {e}")
+                logger.error('HA timer webhook failed: %s', e)
             status_ui.status('ready')
             return
-        print('You said "', text, '"')
+        logger.info('user said: %s', text)
     if audio:
         aiy.audio.play_audio(audio)
 
     status_ui.status('ready')
 
 
-def wait_for_wake(oww, threshold, debug, device, dead_time_s):
+def wait_for_wake(oww, threshold, device, dead_time_s):
     # Capture via arecord so we use ALSA's plug layer (which handles the
     # Voice HAT's fixed native rate → 16 kHz resample) instead of PortAudio,
     # which cannot see plug-family PCMs. A fresh process each call also drops
@@ -128,9 +132,12 @@ def wait_for_wake(oww, threshold, debug, device, dead_time_s):
             chunk = np.frombuffer(raw, dtype=np.int16)
             scores = oww.predict(chunk)
             frames_seen += 1
-            if debug:
+            if logger.isEnabledFor(logging.DEBUG):
                 marker = ' (dead)' if frames_seen <= dead_frames else ''
-                print(' '.join('%s=%.2f' % (k, v) for k, v in scores.items()) + marker)
+                logger.debug(
+                    '%s%s',
+                    ' '.join('%s=%.2f' % (k, v) for k, v in scores.items()),
+                    marker)
             if frames_seen <= dead_frames:
                 continue
             for name, score in scores.items():
@@ -191,31 +198,33 @@ def main():
     parser.add_argument(
         '--debug',
         action='store_true',
-        help='Print per-frame prediction scores to stdout.')
+        help='Log per-frame prediction scores at DEBUG level.')
     args = parser.parse_args()
+
+    if args.debug:
+        logging.getLogger().setLevel(logging.DEBUG)
 
     oww = Model(
         wakeword_models=args.models,
         inference_framework=args.framework,
         vad_threshold=args.vad_threshold)
 
-    print('Loaded wake-word models: %s' % args.models)
-    print('Listening ... (press Ctrl+C to exit)')
+    logger.info('loaded wake-word models: %s', args.models)
+    logger.info('listening for wake word (Ctrl+C to exit)')
 
     try:
         with aiy.audio.get_recorder():
             status_ui.status('ready')
             while True:
                 name, score = wait_for_wake(
-                    oww, args.threshold, args.debug,
+                    oww, args.threshold,
                     args.capture_device, args.dead_time)
                 hotword = hotword_from_model_name(name)
-                logger.info('[%s] Detected %s (score %.3f)' % (
-                    str(datetime.now()), hotword, score))
+                logger.info('detected %s (score %.3f)', hotword, score)
                 on_hey_google(hotword)
                 oww.reset()
     except KeyboardInterrupt:
-        print('Stopping ...')
+        logger.info('stopping')
 
 
 if __name__ == '__main__':
