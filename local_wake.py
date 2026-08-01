@@ -104,16 +104,21 @@ def wait_for_wake(oww, threshold, debug, device):
     # Voice HAT's fixed native rate → 16 kHz resample) instead of PortAudio,
     # which cannot see plug-family PCMs. A fresh process each call also drops
     # audio buffered during the preceding assistant round-trip.
-    proc = subprocess.Popen(
-        ['arecord', '-q', '-D', device, '-f', 'S16_LE',
-         '-r', str(SAMPLE_RATE), '-c', '1', '-t', 'raw'],
-        stdout=subprocess.PIPE)
+    cmd = ['arecord', '-q', '-f', 'S16_LE',
+           '-r', str(SAMPLE_RATE), '-c', '1', '-t', 'raw',
+           '--buffer-size=32000']  # ~1s of slack so brief inference stalls don't overrun
+    if device:
+        cmd += ['-D', device]
+    proc = subprocess.Popen(cmd, stdout=subprocess.PIPE, bufsize=0)
     try:
         chunk_bytes = CHUNK_SAMPLES * 2  # int16 = 2 bytes/sample
         while True:
-            raw = proc.stdout.read(chunk_bytes)
-            if len(raw) < chunk_bytes:
-                raise RuntimeError('arecord exited unexpectedly on device %r' % device)
+            raw = b''
+            while len(raw) < chunk_bytes:
+                more = proc.stdout.read(chunk_bytes - len(raw))
+                if not more:
+                    raise RuntimeError('arecord exited unexpectedly on device %r' % device)
+                raw += more
             chunk = np.frombuffer(raw, dtype=np.int16)
             scores = oww.predict(chunk)
             if debug:
@@ -161,10 +166,11 @@ def main():
              '0 disables (default). Typical enabled value: 0.5')
     parser.add_argument(
         '--capture_device',
-        default='plughw:0,0',
-        help='ALSA capture PCM name passed to arecord -D. Use "micboost" to '
-             'route through the softvol layer defined in ~/.asoundrc. '
-             'Default: plughw:0,0')
+        default='',
+        help='ALSA capture PCM name passed to arecord -D. Empty (default) '
+             'uses arecord\'s system default — matches the path used by a '
+             'bare "arecord test.wav". Try "plughw:0,0" or "micboost" if '
+             'the default routes to the wrong source.')
     parser.add_argument(
         '--debug',
         action='store_true',
