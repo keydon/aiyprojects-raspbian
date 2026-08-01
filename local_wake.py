@@ -47,8 +47,10 @@ HA_WEBHOOK_HEADERS = {
 }
 
 SAMPLE_RATE = 16000
-# openWakeWord expects 80 ms int16 frames at 16 kHz.
-CHUNK_SAMPLES = 1280
+# openWakeWord requires audio in multiples of 80 ms; longer chunks are more
+# efficient at the cost of detection latency.
+FRAME_MS = 80
+FRAME_SAMPLES = SAMPLE_RATE * FRAME_MS // 1000  # 1280
 
 logger = logging.getLogger(__name__)
 
@@ -103,7 +105,7 @@ def on_hey_google(hotword):
     status_ui.status('ready')
 
 
-def wait_for_wake(oww, threshold, device, dead_time_s):
+def wait_for_wake(oww, threshold, device, dead_time_s, chunk_samples):
     # Capture via arecord so we use ALSA's plug layer (which handles the
     # Voice HAT's fixed native rate → 16 kHz resample) instead of PortAudio,
     # which cannot see plug-family PCMs. A fresh process each call also drops
@@ -118,9 +120,9 @@ def wait_for_wake(oww, threshold, device, dead_time_s):
     # real audio, but suppress detections — otherwise the speaker echo of the
     # assistant's response (mic + speaker share the Voice HAT) or the tail of
     # the wake utterance itself re-triggers immediately.
-    dead_frames = int(dead_time_s * SAMPLE_RATE / CHUNK_SAMPLES)
+    dead_frames = int(dead_time_s * SAMPLE_RATE / chunk_samples)
     try:
-        chunk_bytes = CHUNK_SAMPLES * 2  # int16 = 2 bytes/sample
+        chunk_bytes = chunk_samples * 2  # int16 = 2 bytes/sample
         frames_seen = 0
         while True:
             raw = b''
@@ -196,10 +198,21 @@ def main():
              'are suppressed. Suppresses speaker-echo re-triggers on shared '
              'mic/speaker hardware like the Voice HAT. Default: 1.5')
     parser.add_argument(
+        '--chunk_ms',
+        type=int,
+        default=160,
+        help='Audio chunk size fed to the model, in ms. Must be a positive '
+             'multiple of 80. Larger = less CPU, more wake-word latency. '
+             'Default: 160')
+    parser.add_argument(
         '--debug',
         action='store_true',
         help='Log per-frame prediction scores at DEBUG level.')
     args = parser.parse_args()
+
+    if args.chunk_ms <= 0 or args.chunk_ms % FRAME_MS != 0:
+        parser.error('--chunk_ms must be a positive multiple of %d' % FRAME_MS)
+    chunk_samples = SAMPLE_RATE * args.chunk_ms // 1000
 
     if args.debug:
         logging.getLogger().setLevel(logging.DEBUG)
@@ -218,7 +231,7 @@ def main():
             while True:
                 name, score = wait_for_wake(
                     oww, args.threshold,
-                    args.capture_device, args.dead_time)
+                    args.capture_device, args.dead_time, chunk_samples)
                 hotword = hotword_from_model_name(name)
                 logger.info('detected %s (score %.3f)', hotword, score)
                 on_hey_google(hotword)
