@@ -8,7 +8,22 @@ After=network.target ntpdate.service
 [Service]
 Environment=VIRTUAL_ENV=/home/keydon/AIY-voice-kit-python/env
 Environment=PATH=/home/keydon/AIY-voice-kit-python/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
-ExecStart=/home/keydon/AIY-voice-kit-python/env/bin/python pico.py --access_key 'AP++no5NAJImnSUF0plWa2yl9Tfg5A/gWIUtI6o7hGubSP5X9ftmYw==' --keyword_paths ./Computer_de_raspberry-pi_v3_0_0.ppn ./hey-kodi_de_raspberry-pi_v3_0_0.ppn  --model_path ./porcupine_params_de.pv
+# --chunk_ms 80   affordable at RTF 0.82, and the only size at which --patience
+#                 is meaningful (it counts one entry per predict() call)
+# --ncpu 2        melspec/embedding threads; 1 gives RTF 1.04 and constant
+#                 overruns, 2 gives 0.82, 3 and 4 are worse
+# --gain 22       replaces the 30x micboost route gain, applied after the
+#                 anti-alias filter so clipping is logged, not aliased
+# --threshold 0.6 was 0.8, which was compensating for degraded input
+# --patience 3    requires 240ms of sustained evidence instead of one frame
+# --capture       score logs + WAV clips around detections and near-misses
+# --mark_button   press within 20s of a trigger to tag it as a false alarm,
+#                 press any other time to mark a wake word that did not register
+ExecStart=/home/keydon/AIY-voice-kit-python/env/bin/python local_wake.py \
+    --models alexa /home/keydon/AIY-voice-kit-python/extra_models/hey_kodi.tflite \
+    --chunk_ms 80 --ncpu 2 --gain 22 \
+    --threshold 0.6 --patience 3 \
+    --capture --capture_dir /home/keydon/wake_data --mark_button --profile
 WorkingDirectory=/home/keydon/AIY-voice-kit-python
 StandardOutput=inherit
 StandardError=inherit
