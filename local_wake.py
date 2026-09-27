@@ -431,19 +431,25 @@ class DetectConfig:
         return self.thresholds.get(name, self.default_threshold)
 
 
-def decide(scores, cfg):
+def decide(scores, cfg, streaks):
     """Pick the winning model among those over threshold, or None.
 
     Ranking by score/threshold rather than raw score keeps the choice
     meaningful once models carry different thresholds. The previous code
     returned on the first dict key over threshold, so when two models crossed
     on the same frame the winner depended on dict iteration order.
+
+    `streaks` carries the consecutive-frames-over-threshold count, which is
+    how --patience is enforced. See wait_for_wake for why it is not delegated
+    to openWakeWord.
     """
     best = None
     best_ratio = 0.0
     for name, score in scores.items():
         threshold = cfg.threshold_for(name)
         if score < threshold:
+            continue
+        if streaks.get(name, 0) < cfg.patience.get(name, 1):
             continue
         ratio = score / threshold if threshold > 0 else float('inf')
         if ratio > best_ratio:
@@ -476,6 +482,7 @@ def wait_for_wake(oww, source, cfg, instr=None):
     dead_frames = int(cfg.dead_time * SAMPLE_RATE / cfg.chunk_samples)
     frames_seen = 0
     near_peak, near_model, near_quiet = 0.0, '', 0
+    streaks = {}
 
     while True:
         chunk = source.read_chunk()
@@ -483,18 +490,26 @@ def wait_for_wake(oww, source, cfg, instr=None):
             instr.push_audio(chunk)
 
         t0 = time.monotonic()
-        # patience and debounce_time are mutually exclusive upstream (an elif),
-        # and both require `threshold` to be passed as a dict.
-        if cfg.patience:
-            scores = oww.predict(chunk, threshold=cfg.thresholds,
-                                 patience=cfg.patience)
-        elif cfg.debounce_time:
+        # NOTE: --patience is deliberately NOT delegated to openWakeWord.
+        # Upstream appends to prediction_buffer *after* the patience block
+        # zeroes the prediction (model.py: the append at the end of predict()
+        # follows `predictions[mdl] = 0.0`), so a score can only enter the
+        # buffer above threshold if patience already passed, and patience can
+        # only pass if the buffer already holds such scores. Once enabled it
+        # pins the score at 0.0 forever. We count the streak ourselves below.
+        if cfg.debounce_time:
             scores = oww.predict(chunk, threshold=cfg.thresholds,
                                  debounce_time=cfg.debounce_time)
         else:
             scores = oww.predict(chunk)
         predict_ms = (time.monotonic() - t0) * 1000.0
         frames_seen += 1
+
+        for name, score in scores.items():
+            if score >= cfg.threshold_for(name):
+                streaks[name] = streaks.get(name, 0) + 1
+            else:
+                streaks[name] = 0
 
         raw = raw_scores(oww, scores)
         if instr:
@@ -510,12 +525,12 @@ def wait_for_wake(oww, source, cfg, instr=None):
         if frames_seen <= dead_frames:
             continue
 
-        hit = decide(scores, cfg)
+        hit = decide(scores, cfg, streaks)
         if hit:
             return hit
 
-        # Track near-miss episodes on the *ungated* scores, and report one
-        # event per episode rather than one per frame.
+        # Track near-miss episodes and report one event per episode rather
+        # than one per frame.
         if instr and cfg.near_threshold > 0:
             best = max(raw.items(), key=lambda kv: kv[1]) if raw else ('', 0.0)
             if best[1] >= cfg.near_threshold:
@@ -525,7 +540,12 @@ def wait_for_wake(oww, source, cfg, instr=None):
             elif near_peak > 0:
                 near_quiet += 1
                 if near_quiet >= 3:
-                    gate = 'patience' if cfg.patience else 'below_threshold'
+                    # Distinguishing these two is the whole point: did the
+                    # model never score high enough, or did it score high
+                    # enough but fail to sustain it for --patience frames?
+                    gate = ('patience'
+                            if near_peak >= cfg.threshold_for(near_model)
+                            else 'below_threshold')
                     instr.on_near_miss(near_model, near_peak, gate=gate)
                     near_peak, near_model, near_quiet = 0.0, '', 0
 
@@ -715,9 +735,11 @@ def build_parser():
                        help='Seconds of audio kept before an event. Default: 4')
     group.add_argument('--clip_post_s', type=float, default=1.5,
                        help='Seconds kept after an event. Default: 1.5')
-    group.add_argument('--mark_pre_s', type=float, default=6.0,
-                       help='Pre-roll for a button mark, which arrives after '
-                            'you have finished speaking. Default: 6')
+    group.add_argument('--mark_pre_s', type=float, default=20.0,
+                       help='Pre-roll for a button mark. This has to cover '
+                            'every attempt you made before giving up and '
+                            'reaching for the button, not just the last one. '
+                            'Default: 20')
     group.add_argument('--log_scores', choices=['events', 'all'],
                        default='events',
                        help='"events" logs scores around events plus a 10s '

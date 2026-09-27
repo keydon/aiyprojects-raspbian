@@ -163,7 +163,7 @@ class Instrumentation:
     """Facade used by the detection loop. All methods are cheap."""
 
     def __init__(self, capture_dir, threshold, near_threshold,
-                 clip_pre_s=4.0, clip_post_s=1.5, mark_pre_s=6.0,
+                 clip_pre_s=4.0, clip_post_s=1.5, mark_pre_s=20.0,
                  log_scores='events', keep_days=14, max_clips_per_hour=30,
                  fa_window=20.0, mark_button=False, profile=False,
                  chunk_samples=1280):
@@ -269,6 +269,14 @@ class Instrumentation:
             self._pending = [p for p in self._pending if p not in done]
             for p in done:
                 samples = self._ring.extract(p['start'], p['end'])
+                want = p['end'] - p['start']
+                if len(samples) < want * 0.95:
+                    logger.warning(
+                        'clip %s truncated to %.1fs of %.1fs requested: the '
+                        'ring buffer is too small',
+                        os.path.basename(p['path']),
+                        len(samples) / float(SAMPLE_RATE),
+                        want / float(SAMPLE_RATE))
                 self._writer.submit(p['path'], samples)
 
         if self._marker:
@@ -287,7 +295,8 @@ class Instrumentation:
         event_id = self._next_id()
         clip = self._arm(event_id, 'mark', '', 0.0, pre_s=self.mark_pre_s)
         self.event('mark', '', 0.0, gate='ok', clip=clip, extra='', event_id=event_id)
-        logger.info('button: marked a missed wake word (%s)', event_id)
+        logger.info('button: marked a missed wake word (%s), keeping the %.0fs '
+                    'before the press', event_id, self.mark_pre_s)
 
     def _arm(self, event_id, kind, model, score, pre_s=None):
         if not self._disk_ready() or not self._rate_ok():
@@ -313,7 +322,10 @@ class Instrumentation:
         if predict_ms is not None:
             self._predict_ms.append(predict_ms)
         for name, score in scores.items():
-            self._summary[name].append(float(score))
+            # Accumulate the UNGATED score. Summarising the gated one made the
+            # line read "max=0.00" whenever a gate was active, which hid
+            # exactly the thing the summary exists to show.
+            self._summary[name].append(float(raw_scores.get(name, score)))
 
         names = sorted(scores)
         if self._score_header is None:
