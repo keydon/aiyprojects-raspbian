@@ -279,6 +279,8 @@ class AudioSource:
         self._nbytes = 0
         self._cap = int(max_buffer_s * NATIVE_RATE) * NATIVE_CHANNELS * 4
         self._dropped = 0
+        self._dropped_logged = 0
+        self._drop_log_due = 0.0
         self._eof = False
         self._cv = threading.Condition()
         self._thread = threading.Thread(target=self._drain, daemon=True)
@@ -358,7 +360,27 @@ class AudioSource:
         self._reset_stats()
         self._stats_due = now + self._stats_interval
 
+    def _maybe_log_drops(self):
+        """Surface backlog overflow while it is happening, not at shutdown.
+
+        An ALSA overrun is silent; so was this, which defeats the point of
+        replacing one with the other.
+        """
+        if self._dropped == self._dropped_logged:
+            return
+        now = time.monotonic()
+        if now < self._drop_log_due:
+            return
+        self._drop_log_due = now + 10.0
+        lost = self._dropped - self._dropped_logged
+        self._dropped_logged = self._dropped
+        logger.warning(
+            'capture backlog overflow: dropped %.0f ms of audio in the last '
+            '10s (inference is not keeping up)',
+            1000.0 * lost / (NATIVE_RATE * NATIVE_CHANNELS * 4.0))
+
     def read_chunk(self):
+        self._maybe_log_drops()
         raw = self._read_exact(self._native_bytes)
         x = np.frombuffer(raw, dtype='<i4').reshape(-1, NATIVE_CHANNELS)
         x = x.astype(np.float32)
