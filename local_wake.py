@@ -411,9 +411,16 @@ class AudioSource:
                 logger.warning('arecord did not exit after kill')
         self._thread.join(timeout=2)
         if self._dropped:
+            # close() runs when the listening session ends, which is normally
+            # the moment of a detection -- so spell out that this is a total
+            # for the whole session, not something the detection caused.
             logger.warning(
-                'dropped %d bytes of capture: inference could not keep up',
-                self._dropped)
+                'listening session total: dropped %.0f ms of audio (%.0f ms '
+                'of that not already reported). accumulated during listening, '
+                'not at the detection',
+                1000.0 * self._dropped / (NATIVE_RATE * NATIVE_CHANNELS * 4.0),
+                1000.0 * (self._dropped - self._dropped_logged)
+                / (NATIVE_RATE * NATIVE_CHANNELS * 4.0))
 
 
 class DetectConfig:

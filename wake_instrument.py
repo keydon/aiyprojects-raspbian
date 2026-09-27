@@ -262,22 +262,25 @@ class Instrumentation:
 
     # --- called from the detection loop ------------------------------------
 
+    def _emit_clip(self, p):
+        samples = self._ring.extract(p['start'], p['end'])
+        want = p['end'] - p['start']
+        if len(samples) < want * 0.95:
+            logger.warning(
+                'clip %s truncated to %.1fs of %.1fs requested: the ring '
+                'buffer is too small',
+                os.path.basename(p['path']),
+                len(samples) / float(SAMPLE_RATE),
+                want / float(SAMPLE_RATE))
+        self._writer.submit(p['path'], samples)
+
     def push_audio(self, chunk):
         self._ring.push(chunk)
         done = [p for p in self._pending if self._ring.position >= p['end']]
         if done:
             self._pending = [p for p in self._pending if p not in done]
             for p in done:
-                samples = self._ring.extract(p['start'], p['end'])
-                want = p['end'] - p['start']
-                if len(samples) < want * 0.95:
-                    logger.warning(
-                        'clip %s truncated to %.1fs of %.1fs requested: the '
-                        'ring buffer is too small',
-                        os.path.basename(p['path']),
-                        len(samples) / float(SAMPLE_RATE),
-                        want / float(SAMPLE_RATE))
-                self._writer.submit(p['path'], samples)
+                self._emit_clip(p)
 
         if self._marker:
             for ts in self._marker.drain():
@@ -298,21 +301,28 @@ class Instrumentation:
         logger.info('button: marked a missed wake word (%s), keeping the %.0fs '
                     'before the press', event_id, self.mark_pre_s)
 
-    def _arm(self, event_id, kind, model, score, pre_s=None):
+    def _arm(self, event_id, kind, model, score, pre_s=None, post_s=None):
         if not self._disk_ready() or not self._rate_ok():
             return ''
         pre_s = self.clip_pre_s if pre_s is None else pre_s
+        post_s = self.clip_post_s if post_s is None else post_s
         now = self._ring.position
         path = os.path.join(
             self.dir, 'clips', time.strftime('%Y%m%d'),
             '%s_%s_%s_s%03d.wav' % (event_id, kind,
                                     model.replace('/', '_') or 'none',
                                     int(round(score * 100))))
-        self._pending.append({
+        pending = {
             'start': now - int(pre_s * SAMPLE_RATE),
-            'end': now + int(self.clip_post_s * SAMPLE_RATE),
+            'end': now + int(post_s * SAMPLE_RATE),
             'path': path,
-        })
+        }
+        if self._ring.position >= pending['end']:
+            # Nothing left to wait for (post_s == 0), so write it now rather
+            # than leaving it queued until the next chunk arrives.
+            self._emit_clip(pending)
+        else:
+            self._pending.append(pending)
         # Keep the surrounding score rows too, not just the audio.
         self._flush_until = time.time() + self.clip_post_s
         self._flush_event = event_id
@@ -407,7 +417,12 @@ class Instrumentation:
 
     def on_fire(self, model, score):
         event_id = self._next_id()
-        clip = self._arm(event_id, 'fire', model, score)
+        # No post-roll: main() closes the AudioSource before calling this, so
+        # nothing pushes audio again until after the whole assistant
+        # round-trip. A post-roll here would splice several seconds of
+        # unrelated later audio onto the end of the clip. The wake word is
+        # already complete at detection anyway, so the pre-roll has it all.
+        clip = self._arm(event_id, 'fire', model, score, post_s=0.0)
         self.event('fire', model, score, gate='ok', clip=clip,
                    event_id=event_id)
         self.flush_score_tail(event_id)
